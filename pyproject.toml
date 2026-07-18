@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "warthog-py"
+version = "0.1.0"
+description = "Python library for the Warthog cryptocurrency"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    {name = "Warthog Network", email = "team@warthog.network"},
+]
+keywords = ["warthog", "cryptocurrency", "blockchain", "sdk", "defi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "ecdsa>=0.19.0",
+    "mnemonic>=0.20",
+    "bip32>=1.0.0",
+    "pycoin>=0.80",
+    "pycryptodome>=3.18",
+    "requests>=2.32.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.urls]
+Homepage = "https://warthog.network"
+Source = "https://github.com/warthog-network/warthog_py"
+Documentation = "https://docs.warthog.network"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/warthog_py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

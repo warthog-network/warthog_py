@@ -9,7 +9,6 @@ The ``chain_pin`` should typically remain unchanged unless you need to
 refresh it from the network.
 """
 
-import hashlib
 import struct
 from dataclasses import dataclass, replace
 from typing import Any, Dict
@@ -283,9 +282,8 @@ class TransactionContext:
 
 
 def _sign(account: Account, binary: bytes) -> str:
-    """SHA-256 the binary payload and sign with the account."""
-    digest = hashlib.sha256(binary).digest()
-    _, _, _, signature_hex = account.sign(digest)
+    """Sign the binary payload with the account (account hashes internally)."""
+    _, _, _, signature_hex = account.sign_bytes(binary)
     return signature_hex
 
 

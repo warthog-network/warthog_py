@@ -240,8 +240,19 @@ account.private_key_hex
 account.public_key_hex
 account.address
 
-# Sign a 32-byte digest (returns r, s, recid, signature_hex)
-r, s, recid, sig_hex = account.sign(digest_bytes)
+# Sign arbitrary bytes (UTF-8 string or bytes); SHA-256 happens internally
+r, s, recid, sig_hex = account.sign_bytes("hello world")
+r, s, recid, sig_hex = account.sign_bytes(b"hello world")
+
+# Recover the public key (33 bytes) that produced a signature.
+# signature accepts the (r, s, recid, hex) tuple from sign_bytes,
+# the (r, s, recid) tuple, or a 130-char hex string.
+pubkey_bytes = Account.recover_public_key("hello world", sig_hex)
+pubkey_bytes = Account.try_recover_public_key("hello world", sig_hex)  # None on failure
+
+# Recover the Warthog address that produced a signature.
+addr = Account.recover_address("hello world", sig_hex)
+addr = Account.try_recover_address("hello world", sig_hex)  # None on failure
 ```
 
 ### HDWallet
@@ -411,4 +422,4 @@ python examples/transactions.py
 
 - Python's standard library `hashlib.new("ripemd160")` requires OpenSSL to be built with RIPEMD-160 enabled (rarely the case on minimal Linux installs). We fallback to `pycryptodome`'s `RIPEMD160.new()` which is pure-Python and always available.
 - Signing uses `pycoin.ecdsa.secp256k1.secp256k1_generator.sign_with_recid` for RFC6979 deterministic nonce and recovery id in one call. The signature is normalized to low-s form (matching BIP-62).
-- `Account.sign` requires a 32-byte digest, matching the canonical SHA-256-of-tx-binary hash used in the protocol.
+- `Account.sign_bytes` takes arbitrary bytes (`bytes`/`bytearray`/`str`); it hashes the message internally with SHA-256 (the same scheme transaction signing uses). The recovery methods accept the `(r, s, recid, hex)` tuple from `sign_bytes`, a 3-tuple `(r, s, recid)`, or a 130-char hex string.

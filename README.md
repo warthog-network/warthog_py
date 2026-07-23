@@ -125,6 +125,22 @@ uv run pytest
 python examples/transactions.py
 ```
 
+## Development
+
+To bump the version in `pyproject.toml` (using `uv`'s built-in version command):
+
+```bash
+uv version --bump patch    # 0.1.0 -> 0.1.1
+uv version --bump minor    # 0.1.0 -> 0.2.0
+uv version --bump major    # 0.1.0 -> 1.0.0
+```
+
+Use `--no-sync` to skip the venv rebuild:
+
+```bash
+uv version --bump patch --no-sync
+```
+
 ## License
 
 Released under the MIT License.

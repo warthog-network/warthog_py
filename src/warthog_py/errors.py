@@ -31,3 +31,7 @@ class InvalidSignatureError(WarthogPyError):
 
 class InvalidPrivateKeyError(WarthogPyError):
     """Raised when a private key has the wrong size or invalid hex."""
+
+
+class InvalidChainHeadError(WarthogPyError):
+    """Raised when a ``/chain/head`` payload does not match the declared API version."""

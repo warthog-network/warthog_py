@@ -20,7 +20,7 @@ ASSET_HASH = "f45b113119c7f7c000234f1090d5d181ab60b8b24526f1edd2f563aa1ca329f2"
 def make_context():
     account = Account.from_private_key_hex(PRIVATE_KEY_HEX)
     recipient = Address.from_hex(RECIPIENT_HEX)
-    chain_pin = ChainPin(pin_hash="0" * 64, pin_height=1)
+    chain_pin = ChainPin(pin_hash="0" * 64, pin_height=32)
     fee = RoundedFee.min()
     nonce_id = NonceId.from_number(0)
     ctx = TransactionContext(chain_pin=chain_pin, fee=fee, nonce_id=nonce_id)
@@ -33,7 +33,7 @@ class TestTransactionContext:
         wart = Wart.from_e8(100_000_000)
         tx = ctx.transfer_wart(account, recipient, wart)
         assert tx["type"] == "wartTransfer"
-        assert tx["pinHeight"] == 1
+        assert tx["pinHeight"] == 32
         assert tx["nonceId"] == 0
         assert tx["feeE8"] == 1
         assert tx["toAddr"] == RECIPIENT_HEX

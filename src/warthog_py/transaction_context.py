@@ -15,6 +15,7 @@ from typing import Any, Dict
 
 from warthog_py.account import Account
 from warthog_py.address import Address
+from warthog_py.chain_pin import ChainPin
 from warthog_py.funds import Funds
 from warthog_py.liquidity import Liquidity
 from warthog_py.nonce_id import NonceId
@@ -22,14 +23,6 @@ from warthog_py.price import Price
 from warthog_py.rounded_fee import RoundedFee
 from warthog_py.token_decimals import TokenDecimals
 from warthog_py.wart import Wart
-
-
-@dataclass(frozen=True)
-class ChainPin:
-    """A chain pin: hash + height of the most recently pinned block."""
-
-    pin_hash: str
-    pin_height: int
 
 
 TransactionJson = Dict[str, Any]

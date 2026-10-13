@@ -57,9 +57,11 @@ account = Account.from_private_key_hex("your-private-key-hex")
 # 2. Prepare the recipient
 recipient = Address.from_hex("0000000000000000000000000000000000000000de47c9b2")
 
-# 3. Connect to a node (defaults to the first KNOWN_NODES entry;
-#    pass an explicit URL for a local dev node, e.g. "http://127.0.0.1:3100")
-api = WarthogApi()
+# 3. Connect to a node. The version declares which /chain/head generation the
+#    node speaks. The first KNOWN_NODES entry is a public main net node
+#    (port 3001), which serves the V1 API.
+api = WarthogApi("v1")
+#    For a local core/defi node: WarthogApi("v2", "http://127.0.0.1:3100")
 
 # 4. Fetch chain head and build a transaction context
 ctx = api.create_transaction_context(RoundedFee.min(), NonceId.random())

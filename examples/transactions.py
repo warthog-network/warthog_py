@@ -24,9 +24,10 @@ from warthog_py import (
 
 
 def main() -> None:
-    # Defaults to the first KNOWN_NODES entry (public testnet).
-    # Pass an explicit URL for a local dev node, e.g. "http://127.0.0.1:3100".
-    api = WarthogApi()
+    # The first KNOWN_NODES entry is a public main net node (port 3001),
+    # which serves the V1 API, so the version is declared explicitly.
+    # For a local core/defi node use WarthogApi("v2", "http://127.0.0.1:3100").
+    api = WarthogApi("v1")
 
     account = Account.from_random()
     print("Private Key:", account.private_key_hex)

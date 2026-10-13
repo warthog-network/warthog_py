@@ -5,10 +5,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 
+from warthog_py.chain_head import ChainHead
+from warthog_py.constants import API_VERSIONS, ApiVersion
 from warthog_py.errors import WarthogPyError
 from warthog_py.nonce_id import NonceId
 from warthog_py.rounded_fee import RoundedFee
-from warthog_py.transaction_context import ChainPin, TransactionContext
+from warthog_py.transaction_context import TransactionContext
 
 KNOWN_NODES: List[str] = [
     "http://65.87.7.86:3001",
@@ -26,32 +28,47 @@ KNOWN_NODES: List[str] = [
 class WarthogApi:
     """Client for communicating with a Warthog node.
 
-    The default ``base_url`` is the first entry in ``KNOWN_NODES`` (a
-    public testnet node). Override it for a local dev node:
+    ``version`` declares which ``/chain/head`` generation the node speaks and
+    is required, because the V1 and V2 payload shapes are not interchangeable.
+    See :data:`warthog_py.constants.ApiVersion`.
 
-        WarthogApi()                              # public testnet
-        WarthogApi("http://127.0.0.1:3100")      # local dev
+    The first entry in ``KNOWN_NODES`` is a public **main net** node (port
+    3001), which serves the V1 API:
+
+        WarthogApi("v1")                              # public main net
+        WarthogApi("v2", "http://127.0.0.1:3100")     # local core/defi node
     """
 
+    version: ApiVersion
     base_url: str = KNOWN_NODES[0]
     timeout: int = 30
+
+    def __post_init__(self) -> None:
+        # Fail loudly at construction: an unknown version would otherwise
+        # produce a client that quietly mis-parses every chain head.
+        if self.version not in API_VERSIONS:
+            raise ValueError(
+                f"invalid API version: {self.version!r} (must be one of {API_VERSIONS})"
+            )
 
     @staticmethod
     def known_nodes() -> List[str]:
         """Known Warthog public nodes (best-effort, may include dead nodes)."""
         return KNOWN_NODES
 
-    def get_chain_head(self) -> Dict[str, Any]:
-        """Fetch the chain head (latest pinned block).
+    def get_chain_head(self) -> ChainHead:
+        """Fetch the chain head.
 
-        Returns the parsed ``data`` payload as a dict.
+        Normalizes the V1 and V2 payload shapes into a single
+        :class:`~warthog_py.chain_head.ChainHead`.
 
-        Raises ``WarthogApiError`` on failure.
+        Raises ``WarthogApiError`` on failure, or ``InvalidChainHeadError``
+        when the payload does not match the declared ``version``.
         """
         result = self._request("GET", "/chain/head")
         if not result.get("success"):
             raise WarthogApiError(result)
-        return result["data"]
+        return ChainHead.parse(result["data"], self.version)
 
     def submit_transaction(self, tx: Dict[str, Any]) -> Dict[str, Any]:
         """Submit a signed transaction to the node.
@@ -70,17 +87,10 @@ class WarthogApi:
     ) -> TransactionContext:
         """Fetch the chain head and build a ``TransactionContext``.
 
-        Raises ``WarthogApiError`` on failure.
+        Raises ``WarthogApiError`` or ``InvalidChainHeadError`` on failure.
         """
         head = self.get_chain_head()
-        chain_head = head.get("chainHead") or {}
-        pin_hash = chain_head["pinHash"]
-        pin_height = chain_head["pinHeight"]
-        return TransactionContext(
-            chain_pin=ChainPin(pin_hash=pin_hash, pin_height=pin_height),
-            fee=fee,
-            nonce_id=nonce_id,
-        )
+        return TransactionContext(chain_pin=head.pin, fee=fee, nonce_id=nonce_id)
 
     def _request(
         self,

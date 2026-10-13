@@ -330,20 +330,51 @@ library internally.
 ```python
 from warthog_py import WarthogApi, KNOWN_NODES
 
-api = WarthogApi()  # defaults to the first KNOWN_NODES entry (public testnet)
+# The version declares which /chain/head generation the node speaks and is
+# required. The first KNOWN_NODES entry is a public main net node (port 3001),
+# which serves the V1 API.
+api = WarthogApi("v1")
+api = WarthogApi("v2", "http://127.0.0.1:3100")  # local core/defi node
 
 ctx = api.create_transaction_context(fee, nonce)
 
 result = api.submit_transaction(tx)
 print(result["txHash"])
 
-head = api.get_chain_head()  # {"chainHead": {"pinHash": ..., "pinHeight": ...}}
+head = api.get_chain_head()  # ChainHead, normalized across both generations
+head.pin.pin_hash, head.pin.pin_height
+head.height
+head.synced
 
 WarthogApi.known_nodes()  # list of public node URLs (module static method)
 ```
 
 Errors raise `warthog_py.warthog_api.WarthogApiError` (a subclass of
-`WarthogPyError`) with `.code` and a human-readable message.
+`WarthogPyError`) with `.code` and a human-readable message. A chain head that
+does not match the declared version raises `warthog_py.errors.InvalidChainHeadError`.
+
+### API generations: V1 vs V2
+
+`/chain/head` returns the same C++ type on every branch, `Head { ChainHead
+chainHead; bool synced; }`, but the serializer differs:
+
+- **V1** (`core/master`, `core/dev`): a hand-written `to_json(API::Head&)`
+  flattens ChainHead into the top level. `{ hash, height, pinHash, pinHeight, ..., synced }`
+- **V2** (`core/defi`): glaze reflects the nesting. `{ chainHead: { hash, height, pinHash, pinHeight, ... }, synced }`
+
+The client is told which one to expect rather than sniffing the payload.
+`ChainPin.try_parse()` and `ChainHead.try_parse()` return `None` when the
+payload does not match, and `get_chain_head()` raises `InvalidChainHeadError`.
+
+`ChainPin` and `ChainHead` also parse standalone, without a client:
+
+```python
+from warthog_py import ChainHead, ChainPin, PIN_HEIGHT_MULTIPLE
+
+head = ChainHead.parse(payload, "v2")
+pin = ChainPin.try_parse(payload, "v1")
+PIN_HEIGHT_MULTIPLE  # 32
+```
 
 ## Common Patterns
 
@@ -366,7 +397,7 @@ account = Account.from_private_key_hex("your-private-key-hex")
 recipient = Address.from_hex("0000000000000000000000000000000000000000de47c9b2")
 
 # 3. Connect to the API
-api = WarthogApi()  # defaults to the first KNOWN_NODES entry (public testnet)
+api = WarthogApi("v1")  # first KNOWN_NODES entry (a public main net node)
 
 # 4. Create a transaction context (fetches chain pin automatically)
 ctx = api.create_transaction_context(RoundedFee.min(), NonceId.random())
@@ -385,6 +416,23 @@ print(result["txHash"])
 - **Public fields**: `account.address` and `account.private_key_hex` are dataclass fields, not methods.
 - **Arbitrary precision**: Python `int` is unbounded, so `bigint` in TS is just `int` here.
 - **Bang convention** (Pythonic variant): every factory ships as both `name(...)` (raises) and `try_name(...)` (returns `None`).
+
+## Breaking changes
+
+### 0.2.0 — `/chain/head` V1 API handling
+
+- `WarthogApi` now takes a **required** `version` as its first argument,
+  `"v1"` or `"v2"`. `WarthogApi("http://host")` no longer means "URL"; it is
+  an invalid version and raises `ValueError`. Use `WarthogApi(version, url)`.
+  The reason for the ordering is that Python 3.9 is supported, so
+  `dataclasses.field(kw_only=True)` is unavailable.
+- `get_chain_head()` returns a `ChainHead` instead of the raw decoded dict.
+  Use `head.pin.pin_hash`, `head.pin.pin_height`, `head.height`, `head.synced`.
+- `ChainPin` moved from `warthog_py.transaction_context` to `warthog_py.chain_pin`.
+  It is still importable as `from warthog_py import ChainPin`.
+- The old `create_transaction_context` did `head["pinHash"]` after
+  `head.get("chainHead") or {}`, which raised a bare `KeyError` against any
+  V1 node. It now works against both generations.
 
 ## Testing
 

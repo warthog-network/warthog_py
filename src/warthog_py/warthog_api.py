@@ -1,18 +1,24 @@
-"""Client for communicating with Warthog nodes."""
+"""Shared HTTP plumbing for the node clients.
+
+The two node families are separate APIs, so they get a client each:
+:class:`warthog_py.legacy_api.WarthogLegacyApi` for the legacy node
+(core/master, core/dev) and :class:`warthog_py.defi_api.WarthogDeFiApi` for
+the DeFi node (core/defi). What they genuinely share lives here: the
+request plumbing, the chain head fetch and the transaction submission.
+"""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import requests
 
 from warthog_py.chain_head import ChainHead
-from warthog_py.constants import API_VERSIONS, ApiVersion
+from warthog_py.constants import ApiVersion
 from warthog_py.errors import WarthogPyError
 from warthog_py.nonce_id import NonceId
 from warthog_py.rounded_fee import RoundedFee
-from warthog_py.transaction_context import TransactionContext
 
-KNOWN_NODES: List[str] = [
+KNOWN_NODES_LEGACY: List[str] = [
     "http://65.87.7.86:3001",
     "http://185.209.228.16:3001",
     "http://89.117.150.162:3001",
@@ -21,40 +27,40 @@ KNOWN_NODES: List[str] = [
     "https://node.wartscan.io",
     "http://dev.node-s.com:3001",
 ]
-"""Known Warthog public nodes (best-effort, may include dead nodes)."""
+"""Known legacy nodes (core/master, core/dev). These serve the V1 API."""
+
+KNOWN_NODES_DEFI: List[str] = [
+    "http://65.87.7.86:3002/",
+    "https://warthog-defitestnet.duckdns.org/",
+    "http://104.251.219.14:3001/",
+    "http://85.56.145.106:3001/",
+    "http://64.44.90.170:3001/",
+]
+"""Known DeFi nodes (core/defi). These serve the V2 API."""
 
 
 @dataclass
-class WarthogApi:
-    """Client for communicating with a Warthog node.
+class WarthogApiBase:
+    """Shared HTTP plumbing for the node clients.
 
-    ``version`` declares which ``/chain/head`` generation the node speaks and
-    is required, because the V1 and V2 payload shapes are not interchangeable.
-    See :data:`warthog_py.constants.ApiVersion`.
-
-    The first entry in ``KNOWN_NODES`` is a public **main net** node (port
-    3001), which serves the V1 API:
-
-        WarthogApi("v1")                              # public main net
-        WarthogApi("v2", "http://127.0.0.1:3100")     # local core/defi node
+    The subclasses are the clients: each one declares which ``/chain/head``
+    generation it reads and which transaction set it builds.
     """
 
-    version: ApiVersion
-    base_url: str = KNOWN_NODES[0]
+    base_url: str
     timeout: int = 30
 
-    def __post_init__(self) -> None:
-        # Fail loudly at construction: an unknown version would otherwise
-        # produce a client that quietly mis-parses every chain head.
-        if self.version not in API_VERSIONS:
-            raise ValueError(
-                f"invalid API version: {self.version!r} (must be one of {API_VERSIONS})"
-            )
+    version: ClassVar[ApiVersion] = "v1"
 
     @staticmethod
-    def known_nodes() -> List[str]:
-        """Known Warthog public nodes (best-effort, may include dead nodes)."""
-        return KNOWN_NODES
+    def known_nodes_legacy() -> List[str]:
+        """Known legacy nodes (core/master, core/dev)."""
+        return KNOWN_NODES_LEGACY
+
+    @staticmethod
+    def known_nodes_defi() -> List[str]:
+        """Known DeFi nodes (core/defi)."""
+        return KNOWN_NODES_DEFI
 
     def get_chain_head(self) -> ChainHead:
         """Fetch the chain head.
@@ -63,7 +69,7 @@ class WarthogApi:
         :class:`~warthog_py.chain_head.ChainHead`.
 
         Raises ``WarthogApiError`` on failure, or ``InvalidChainHeadError``
-        when the payload does not match the declared ``version``.
+        when the payload does not match this client's generation.
         """
         result = self._request("GET", "/chain/head")
         if not result.get("success"):
@@ -81,16 +87,6 @@ class WarthogApi:
         if not result.get("success"):
             raise WarthogApiError(result)
         return result["data"]
-
-    def create_transaction_context(
-        self, fee: RoundedFee, nonce_id: NonceId
-    ) -> TransactionContext:
-        """Fetch the chain head and build a ``TransactionContext``.
-
-        Raises ``WarthogApiError`` or ``InvalidChainHeadError`` on failure.
-        """
-        head = self.get_chain_head()
-        return TransactionContext(chain_pin=head.pin, fee=fee, nonce_id=nonce_id)
 
     def _request(
         self,
@@ -144,7 +140,7 @@ def _error_result(msg: str) -> Dict[str, Any]:
 
 
 class WarthogApiError(WarthogPyError):
-    """Raised when a WarthogApi call fails."""
+    """Raised when a node client call fails."""
 
     def __init__(self, result: Dict[str, Any]):
         self.code = result.get("code", -1)

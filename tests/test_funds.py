@@ -21,6 +21,17 @@ class TestFunds:
         f = Funds.from_parsed_funds(pf, TokenDecimals.new(4))
         assert f.amount == 11230
 
+    def test_from_amount(self):
+        # The amount is in the token's smallest unit, so it needs no decimals.
+        assert Funds.from_amount(11_230).amount == 11_230
+
+    def test_from_amount_rejects_invalid(self):
+        with pytest.raises(InvalidFundsError):
+            Funds.from_amount(-1)
+        with pytest.raises(InvalidFundsError):
+            Funds.from_amount(2**64)
+        assert Funds.try_from_amount(-1) is None
+
     # uint64 conversion behavior — these mirror the warthog-ts test_funds.test.ts cases
     # exactly. Each tests one parsed string against decimal-place counts 0/4/12/16.
 

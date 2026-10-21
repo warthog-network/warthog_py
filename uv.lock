@@ -590,7 +590,7 @@ wheels = [
 
 [[package]]
 name = "warthog-py"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "bip32" },

@@ -274,85 +274,140 @@ account = wallet.derive_account_from_path("m/0/0")  # leading m/ optional
 
 ## Transaction Building
 
-### TransactionContext
-**File:** `src/warthog_py/transaction_context.py`
+### Transaction contexts
+**File:** `src/warthog_py/legacy_transaction_context.py`, `src/warthog_py/defi_transaction_context.py`
 
-Builds and signs transactions. Obtain via
-`WarthogApi.create_transaction_context`. The context's `chain_pin`,
-`fee`, and `nonce_id` are stored as dataclass fields. Use
-`with_nonce(...)` / `with_fee(...)` to produce an updated copy.
+Builds and signs transactions. There is one context per node family, because
+the two families accept different transaction sets.
+
+- `WarthogLegacyTransactionContext` is for the legacy node (core/master,
+  core/dev). That node's only transaction endpoint parses a single message
+  shape, a transfer, so this context has exactly one builder,
+  `transfer_wart`. The legacy node reads the amount from `amountE8`.
+- `WarthogDeFiTransactionContext` is for the DeFi node (core/defi), which
+  accepts nine transaction types. Its WART transfer reads the amount from
+  `wartE8`, which is where the DeFi node looks for it. `amountE8` means the
+  liquidity share count on that node.
+
+The two are separate classes on purpose: a legacy context cannot build a
+limit swap, because the method does not exist on it. Both declare
+`transfer_wart(account, to_addr, wart)` with the same signature, so calling
+code that only sends WART can hold `AnyTransactionContext` and call it on
+whichever node it is talking to.
 
 ```python
-from warthog_py import TransactionContext
+from warthog_py import WarthogDeFiTransactionContext
 
 # WART transfer
-tx = context.transfer_wart(account, recipient, wart)
+ctx.transfer_wart(account, recipient, wart)
 
-# Asset transfer
-tx = context.transfer_asset(account, asset_hash, recipient, funds)
+# Asset transfer (transfer regular tokens)
+ctx.transfer_asset(account, asset_hash, recipient, funds)
 
-# Liquidity transfer
-tx = context.transfer_liquidity(account, asset_hash, recipient, units)
+# Liquidity transfer (transfer liquidity pool tokens)
+ctx.transfer_liquidity(account, asset_hash, recipient, units)
 
 # Buy (spend WART to buy tokens)
-tx = context.buy(account, asset_hash, wart_amount, limit)
+ctx.buy(account, asset_hash, wart_amount, limit)
 
 # Sell (sell tokens for WART)
-tx = context.sell(account, asset_hash, token_amount, limit)
+ctx.sell(account, asset_hash, token_amount, limit)
 
-# Deposit liquidity
-tx = context.deposit_liquidity(account, asset_hash, token_amount, wart)
+# Deposit liquidity into pool
+ctx.deposit_liquidity(account, asset_hash, token_amount, wart)
 
-# Withdraw liquidity
-tx = context.withdraw_liquidity(account, asset_hash, units)
+# Withdraw liquidity from pool
+ctx.withdraw_liquidity(account, asset_hash, units)
 
 # Cancel transaction
-tx = context.cancel_transaction(account, cancel_height, cancel_nonce_id)
+ctx.cancel_transaction(account, cancel_height, cancel_nonce_id)
 
 # Create assets
-tx = context.create_assets(account, total_supply, decimals, name)
-
-# Reuse the same context for multiple transactions (must change nonce!)
-context2 = context.with_nonce(NonceId.from_number(1))
-tx2 = context2.transfer_wart(account, recipient, wart)
+ctx.create_assets(account, total_supply, decimals, name)
 ```
 
 All return a signed transaction dict (with a `signature65` field)
-ready for `WarthogApi.submit_transaction`.
+ready for `submit_transaction`.
+
+**The amount field follows the node family.** The legacy node reads a
+transfer's amount from `amountE8` (`core/master/src/node/api/http/parse.cpp`),
+the DeFi node reads it from `wartE8` (`core/defi/src/shared/src/api/http/json_converter.cpp`),
+and on `core/defi` the name `amountE8` means the liquidity share count.
+Neither node reads the other's field, so exactly one of them may be sent.
+The legacy payload carries no `type` at all.
+
+**The signed bytes are the same in both.** A signature produced for one
+family is valid for the other; only the JSON around it differs.
 
 ## API Communication
 
-### WarthogApi
+### WarthogApiBase
 **File:** `src/warthog_py/warthog_api.py`
 
-Client for communicating with Warthog nodes. Uses the `requests`
-library internally.
+The shared HTTP plumbing: the request, the chain head fetch and the
+transaction submission. The node lists are split the same way as the
+clients: `known_nodes_legacy()` and `known_nodes_defi()`.
+
+### WarthogLegacyApi
+**File:** `src/warthog_py/legacy_api.py`
+
+Client for the legacy node (core/master, core/dev). Its `/chain/head` comes
+back flat, and it accepts one kind of transaction.
 
 ```python
-from warthog_py import WarthogApi, KNOWN_NODES
+from warthog_py import WarthogLegacyApi
 
-# The version declares which /chain/head generation the node speaks and is
-# required. The first KNOWN_NODES entry is a public main net node (port 3001),
-# which serves the V1 API.
-api = WarthogApi("v1")
-api = WarthogApi("v2", "http://127.0.0.1:3100")  # local core/defi node
+# The first known legacy node is a public main net node (port 3001).
+api = WarthogLegacyApi()
+api = WarthogLegacyApi("http://127.0.0.1:3100")
 
+# Create a transaction context (fetches chain pin)
 ctx = api.create_transaction_context(fee, nonce)
 
+# Submit a signed transaction
 result = api.submit_transaction(tx)
 print(result["txHash"])
 
-head = api.get_chain_head()  # ChainHead, normalized across both generations
+# Fetch chain head directly, normalized across both generations
+head = api.get_chain_head()  # ChainHead
 head.pin.pin_hash, head.pin.pin_height
 head.height
 head.synced
 
-WarthogApi.known_nodes()  # list of public node URLs (module static method)
+# The legacy node reports one number: the confirmed balance.
+wart = api.get_wart_balance(address)
+```
+
+### WarthogDeFiApi
+**File:** `src/warthog_py/defi_api.py`
+
+Client for the DeFi node (core/defi). Its `/chain/head` comes back nested
+under `chainHead`, and it accepts nine kinds of transaction.
+
+```python
+from warthog_py import WarthogDeFiApi
+
+api = WarthogDeFiApi()
+api = WarthogDeFiApi("http://127.0.0.1:3101")
+
+ctx = api.create_transaction_context(fee, nonce)
+result = api.submit_transaction(tx)
+
+# The DeFi node reports the balance three ways: the total, what is locked
+# in open limit orders, and what is locked by transactions in the mempool.
+balance = api.get_wart_balance(address)
+free = balance.free()
+
+# A token balance. The DeFi node only, the legacy node has no tokens.
+token = api.get_token_balance(address, asset_hash)
 ```
 
 Errors raise `warthog_py.warthog_api.WarthogApiError` (a subclass of
 `WarthogPyError`) with `.code` and a human-readable message. A chain head that
-does not match the declared version raises `warthog_py.errors.InvalidChainHeadError`.
+does not match the client's generation raises
+`warthog_py.errors.InvalidChainHeadError`, and a balance payload that is
+malformed or does not add up raises
+`warthog_py.errors.InvalidBalanceError`.
 
 ### API generations: V1 vs V2
 
@@ -366,6 +421,8 @@ chainHead; bool synced; }`, but the serializer differs:
 The client is told which one to expect rather than sniffing the payload.
 `ChainPin.try_parse()` and `ChainHead.try_parse()` return `None` when the
 payload does not match, and `get_chain_head()` raises `InvalidChainHeadError`.
+Each client reads its own generation, so the caller does not pick one:
+`WarthogLegacyApi` reads V1, `WarthogDeFiApi` reads V2.
 
 `ChainPin` and `ChainHead` also parse standalone, without a client:
 
@@ -385,10 +442,10 @@ PIN_HEIGHT_MULTIPLE  # 32
 from warthog_py import (
     Account,
     Address,
-    RoundedFee,
-    Wart,
     NonceId,
-    WarthogApi,
+    RoundedFee,
+    WarthogLegacyApi,
+    Wart,
 )
 
 # 1. Load your account
@@ -398,7 +455,7 @@ account = Account.from_private_key_hex("your-private-key-hex")
 recipient = Address.from_hex("0000000000000000000000000000000000000000de47c9b2")
 
 # 3. Connect to the API
-api = WarthogApi("v1")  # first KNOWN_NODES entry (a public main net node)
+api = WarthogLegacyApi()  # first known legacy node, a public main net node
 
 # 4. Create a transaction context (fetches chain pin automatically)
 ctx = api.create_transaction_context(RoundedFee.min(), NonceId.random())
@@ -419,6 +476,36 @@ print(result["txHash"])
 - **Bang convention** (Pythonic variant): every factory ships as both `name(...)` (raises) and `try_name(...)` (returns `None`).
 
 ## Breaking changes
+
+### 0.4.0 — one client and one context per node family
+
+The two node families are separate APIs, not one API with a mode, so they get
+a client and a transaction context each. This mirrors `warthog-ts` 0.4.0 and
+`warthog_ex` 0.3.0.
+
+- `WarthogApi` is gone. `WarthogLegacyApi` talks to the legacy node
+  (core/master, core/dev) and `WarthogDeFiApi` to the DeFi node (core/defi).
+  `WarthogApiBase` holds what they share.
+- `WarthogApi("v1")` and `WarthogApi("v2", url)` are gone. Use
+  `WarthogLegacyApi()` / `WarthogLegacyApi(url)` and `WarthogDeFiApi()` /
+  `WarthogDeFiApi(url)`. A client no longer takes a version argument: the
+  client says which generation it reads.
+- `KNOWN_NODES` is split into `KNOWN_NODES_LEGACY` and `KNOWN_NODES_DEFI`,
+  and the base exposes both as `known_nodes_legacy()` and
+  `known_nodes_defi()`.
+- `TransactionContext` is gone as a class. The contexts are
+  `WarthogLegacyTransactionContext` and `WarthogDeFiTransactionContext`, and
+  `AnyTransactionContext` is their `Union` for calling code that only sends
+  WART. A legacy context cannot build a limit swap, because that builder
+  does not exist on it.
+- The legacy payload has no `type` and carries the amount in `amountE8`. The
+  DeFi payload carries the amount in `wartE8`. The signed bytes are the same
+  in both.
+- `DeFiWartBalance` and `TokenBalance` read the three amounts the DeFi node
+  reports, with `free()` as the difference. `get_wart_balance()` on the
+  legacy client returns a plain `Wart`: that node reports one number and has
+  no limit orders.
+- `Funds.from_amount()` builds funds from an integer amount.
 
 ### 0.3.0 — Python 3.10 floor, libsecp256k1 for all curve work
 

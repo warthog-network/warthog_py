@@ -1,16 +1,15 @@
-import pytest
-
 from warthog_py.account import Account
 from warthog_py.address import Address
+from warthog_py.chain_pin import ChainPin
+from warthog_py.defi_transaction_context import WarthogDeFiTransactionContext
 from warthog_py.funds import Funds
+from warthog_py.legacy_transaction_context import WarthogLegacyTransactionContext
 from warthog_py.liquidity import Liquidity
 from warthog_py.nonce_id import NonceId
 from warthog_py.price import Price
 from warthog_py.rounded_fee import RoundedFee
 from warthog_py.token_decimals import TokenDecimals
-from warthog_py.transaction_context import ChainPin, TransactionContext
 from warthog_py.wart import Wart
-
 
 PRIVATE_KEY_HEX = "966a71a98bb5d13e9116c0dffa3f1a7877e45c6f563897b96cfd5c59bf0803e0"
 RECIPIENT_HEX = "0000000000000000000000000000000000000000de47c9b2"
@@ -23,11 +22,13 @@ def make_context():
     chain_pin = ChainPin(pin_hash="0" * 64, pin_height=32)
     fee = RoundedFee.min()
     nonce_id = NonceId.from_number(0)
-    ctx = TransactionContext(chain_pin=chain_pin, fee=fee, nonce_id=nonce_id)
+    ctx = WarthogDeFiTransactionContext(
+        chain_pin=chain_pin, fee=fee, nonce_id=nonce_id
+    )
     return ctx, account, recipient
 
 
-class TestTransactionContext:
+class TestDeFiTransactionContext:
     def test_transfer_wart(self):
         ctx, account, recipient = make_context()
         wart = Wart.from_e8(100_000_000)
@@ -39,6 +40,15 @@ class TestTransactionContext:
         assert tx["toAddr"] == RECIPIENT_HEX
         assert tx["wartE8"] == 100_000_000
         assert len(bytes.fromhex(tx["signature65"])) == 65
+
+    def test_the_amount_goes_in_wart_e8(self):
+        # On the DeFi node the name amountE8 means the liquidity share count,
+        # so the WART amount has to travel as wartE8.
+        ctx, account, recipient = make_context()
+        wart = Wart.from_e8(100_000_000)
+        tx = ctx.transfer_wart(account, recipient, wart)
+        assert tx["wartE8"] == 100_000_000
+        assert "amountE8" not in tx
 
     def test_transfer_asset(self):
         ctx, account, recipient = make_context()
@@ -80,7 +90,10 @@ class TestTransactionContext:
         wart = Wart.from_e8(100_000_000)
         tx = ctx.deposit_liquidity(account, ASSET_HASH, token_amount, wart)
         assert tx["type"] == "liquidityDeposit"
+        # The token amount travels as amountU64. amountE8 is the liquidity
+        # share count, which is what a withdrawal carries.
         assert tx["amountU64"] == token_amount.amount
+        assert tx["wartE8"] == 100_000_000
 
     def test_withdraw_liquidity(self):
         ctx, account, _ = make_context()
@@ -132,3 +145,17 @@ class TestTransactionContext:
         for tx in txs:
             sig_bytes = bytes.fromhex(tx["signature65"])
             assert len(sig_bytes) == 65
+
+    def test_both_families_sign_the_same_bytes(self):
+        # The signed bytes are identical, only the JSON around them differs,
+        # so a signature produced for one family is valid for the other.
+        ctx, account, recipient = make_context()
+        wart = Wart.from_e8(100_000_000)
+        legacy_ctx = WarthogLegacyTransactionContext(
+            chain_pin=ctx.chain_pin, fee=ctx.fee, nonce_id=ctx.nonce_id
+        )
+
+        legacy = legacy_ctx.transfer_wart(account, recipient, wart)
+        defi = ctx.transfer_wart(account, recipient, wart)
+
+        assert legacy["signature65"] == defi["signature65"]

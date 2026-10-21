@@ -3,6 +3,11 @@
 This is the Python port of `warthog-ts` (TypeScript) and `warthog_ex`
 (Elixir). It provides type-safe primitives for building and submitting
 transactions on the Warthog network.
+
+The two node families are separate APIs, so there is a client and a
+transaction context for each: the legacy node (core/master, core/dev) takes
+one kind of transaction, a transfer, and the DeFi node (core/defi) takes the
+full native DeFi transaction set.
 """
 
 from warthog_py.constants import API_VERSIONS, MAX_U32, MAX_U64, ApiVersion
@@ -20,8 +25,18 @@ from warthog_py.account import Account
 from warthog_py.hd_wallet import HDWallet
 from warthog_py.chain_pin import PIN_HEIGHT_MULTIPLE, ChainPin
 from warthog_py.chain_head import ChainHead
-from warthog_py.transaction_context import TransactionContext, TransactionJson
-from warthog_py.warthog_api import WarthogApi, KNOWN_NODES
+from warthog_py.balance import DeFiWartBalance, TokenBalance
+from warthog_py.transaction_context import AnyTransactionContext, TransactionJson
+from warthog_py.legacy_transaction_context import WarthogLegacyTransactionContext
+from warthog_py.defi_transaction_context import WarthogDeFiTransactionContext
+from warthog_py.warthog_api import (
+    KNOWN_NODES_DEFI,
+    KNOWN_NODES_LEGACY,
+    WarthogApiBase,
+    WarthogApiError,
+)
+from warthog_py.legacy_api import WarthogLegacyApi
+from warthog_py.defi_api import WarthogDeFiApi
 
 __all__ = [
     "MAX_U64",
@@ -43,8 +58,16 @@ __all__ = [
     "PIN_HEIGHT_MULTIPLE",
     "ChainPin",
     "ChainHead",
-    "TransactionContext",
+    "DeFiWartBalance",
+    "TokenBalance",
+    "AnyTransactionContext",
     "TransactionJson",
-    "WarthogApi",
-    "KNOWN_NODES",
+    "WarthogLegacyTransactionContext",
+    "WarthogDeFiTransactionContext",
+    "WarthogApiBase",
+    "WarthogApiError",
+    "WarthogLegacyApi",
+    "WarthogDeFiApi",
+    "KNOWN_NODES_LEGACY",
+    "KNOWN_NODES_DEFI",
 ]

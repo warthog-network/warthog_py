@@ -40,15 +40,10 @@ dependencies = [
 from warthog_py import (
     Account,
     Address,
-    Funds,
-    Liquidity,
     NonceId,
-    Price,
     RoundedFee,
-    TokenDecimals,
-    TransactionContext,
+    WarthogLegacyApi,
     Wart,
-    WarthogApi,
 )
 
 # 1. Load or generate your account
@@ -57,11 +52,12 @@ account = Account.from_private_key_hex("your-private-key-hex")
 # 2. Prepare the recipient
 recipient = Address.from_hex("0000000000000000000000000000000000000000de47c9b2")
 
-# 3. Connect to a node. The version declares which /chain/head generation the
-#    node speaks. The first KNOWN_NODES entry is a public main net node
-#    (port 3001), which serves the V1 API.
-api = WarthogApi("v1")
-#    For a local core/defi node: WarthogApi("v2", "http://127.0.0.1:3100")
+# 3. Connect to a node. The legacy node (core/master, core/dev) takes one
+#    kind of transaction, a transfer. The first known legacy node is a public
+#    main net node (port 3001).
+api = WarthogLegacyApi()
+#    For a local core/master node: WarthogLegacyApi("http://127.0.0.1:3100")
+#    For the DeFi node: WarthogDeFiApi("http://127.0.0.1:3101")
 
 # 4. Fetch chain head and build a transaction context
 ctx = api.create_transaction_context(RoundedFee.min(), NonceId.random())
@@ -90,8 +86,69 @@ print(result["txHash"])
 | `warthog_py.Price` | Normalized mantissa/exponent prices |
 | `warthog_py.Account` | secp256k1 wallet account |
 | `warthog_py.HDWallet` | BIP-44 hierarchical deterministic wallet |
-| `warthog_py.TransactionContext` | Transaction builder (all 7 types) |
-| `warthog_py.WarthogApi` | HTTP client for Warthog nodes |
+| `warthog_py.ChainPin` | Proposed (height, hash) pin for transaction building |
+| `warthog_py.ChainHead` | Normalized `/chain/head` view |
+| `warthog_py.DeFiWartBalance` | WART balance on the DeFi node |
+| `warthog_py.TokenBalance` | Token balance on the DeFi node |
+| `warthog_py.AnyTransactionContext` | Union of the two transaction contexts |
+| `warthog_py.WarthogLegacyTransactionContext` | Transaction builder for the legacy node |
+| `warthog_py.WarthogDeFiTransactionContext` | Transaction builder for the DeFi node |
+| `warthog_py.WarthogApiBase` | HTTP plumbing shared by the node clients |
+| `warthog_py.WarthogLegacyApi` | Client for the legacy node |
+| `warthog_py.WarthogDeFiApi` | Client for the DeFi node |
+
+## The two node families
+
+The two node families are separate APIs, not one API with a mode, so there is
+a client and a transaction context for each.
+
+| | Legacy node | DeFi node |
+|---|---|---|
+| Node | `core/master`, `core/dev` | `core/defi` |
+| Chain head | flat | nested under `chainHead` |
+| Transactions | a transfer only | nine kinds |
+| WART amount field | `amountE8` | `wartE8` |
+| Payload `type` | none | required |
+| Client | `WarthogLegacyApi` | `WarthogDeFiApi` |
+| Context | `WarthogLegacyTransactionContext` | `WarthogDeFiTransactionContext` |
+
+Neither node reads the other's amount field, so exactly one of them may be
+sent. The signed bytes are the same in both, so a signature made for one
+family is valid for the other.
+
+A legacy context cannot build a limit swap, because that builder does not
+exist on it. Code that only sends WART can hold either context:
+
+```python
+from warthog_py import AnyTransactionContext
+
+def send_wart(ctx: AnyTransactionContext, account, recipient, wart):
+    tx = ctx.transfer_wart(account, recipient, wart)
+    ...
+```
+
+### Balances
+
+```python
+from warthog_py import WarthogApiBase, WarthogDeFiApi, WarthogLegacyApi
+
+legacy = WarthogLegacyApi()
+defi = WarthogDeFiApi()
+
+WarthogApiBase.known_nodes_legacy()
+WarthogApiBase.known_nodes_defi()
+
+# The legacy node reports one number: the confirmed balance.
+wart = legacy.get_wart_balance(address)
+
+# The DeFi node reports the total, what is locked in open limit orders and
+# what is locked by transactions in the mempool.
+balance = defi.get_wart_balance(address)
+free = balance.free()
+
+# A token balance, the DeFi node only.
+token = defi.get_token_balance(address, asset_hash)
+```
 
 ## Error handling convention
 

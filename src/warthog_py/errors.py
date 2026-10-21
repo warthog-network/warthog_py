@@ -35,3 +35,7 @@ class InvalidPrivateKeyError(WarthogPyError):
 
 class InvalidChainHeadError(WarthogPyError):
     """Raised when a ``/chain/head`` payload does not match the declared API version."""
+
+
+class InvalidBalanceError(WarthogPyError):
+    """Raised when a node's balance payload is malformed or does not add up."""

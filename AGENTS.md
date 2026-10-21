@@ -37,6 +37,7 @@ We use the standard library where it provides a clean primitive:
 - `struct.pack(">Q", n)` / `struct.pack(">II", a, b)` for fixed-width big-endian serialization in `TransactionContext`.
 - `hashlib.sha256()` / `pycryptodome.RIPEMD160.new()` for hashing.
 - `secrets.randbelow()` for NonceId.random.
+- `secrets.token_bytes()` for the random account private key.
 - `dataclasses.dataclass(frozen=True)` for immutable value types.
 - `requests` for HTTP.
 
@@ -217,8 +218,8 @@ adjusted = Price.to_double_adjusted(price, TokenDecimals.wart())
 ### Account
 **File:** `src/warthog_py/account.py`
 
-Wallet account for signing transactions. Uses secp256k1 elliptic curve.
-The address is derived as
+Wallet account for signing transactions. Uses secp256k1 elliptic curve
+through `coincurve` (libsecp256k1). The address is derived as
 `RIPEMD-160(SHA-256(compressed-public-key))` with a 4-byte SHA-256
 checksum appended.
 
@@ -419,13 +420,39 @@ print(result["txHash"])
 
 ## Breaking changes
 
+### 0.3.0 — Python 3.10 floor, libsecp256k1 for all curve work
+
+- **Python 3.9 is no longer supported.** `requires-python` is now `>=3.10`.
+  The reason for the floor was that `requests` 2.33+ and `urllib3` 2.8.0 both
+  require Python 3.10, and both carry advisories in the versions that 3.9
+  forces. Python 3.9 reached end of life in October 2025.
+- **`ecdsa` and `pycoin` are gone.** All secp256k1 work now goes through
+  `coincurve`, which is libsecp256k1, the reference implementation. `coincurve`
+  was already in the tree as a hard dependency of `bip32`, so this removes two
+  packages rather than adding one.
+  - `ecdsa` carried a HIGH advisory (CVE-2024-23342, the Minerva timing attack
+    on P-256) with **no fix in any release**, since the project treats side
+    channel attacks as out of scope. warthog_py only ever used its secp256k1
+    key handling, so the vulnerable P-256 path was never reached, but the
+    package was installed into every user's environment.
+  - `pycoin` was used for signing and for a hand-rolled public key recovery
+    built on its point arithmetic. Both are now libsecp256k1 calls, and the
+    hand-rolled recovery is gone from the SDK.
+- **No public API change.** `Account` keeps the same fields, factories, error
+  types and the same signature wire format. An invalid private key now raises
+  `InvalidPrivateKeyError` instead of leaking a third-party exception.
+- The signatures themselves are unchanged: the same RFC 6979 vectors are
+  reproduced byte for byte, and `warthog-ts` and `warthog_ex` assert the same
+  vectors.
+
 ### 0.2.0 — `/chain/head` V1 API handling
 
 - `WarthogApi` now takes a **required** `version` as its first argument,
   `"v1"` or `"v2"`. `WarthogApi("http://host")` no longer means "URL"; it is
   an invalid version and raises `ValueError`. Use `WarthogApi(version, url)`.
   The reason for the ordering is that Python 3.9 is supported, so
-  `dataclasses.field(kw_only=True)` is unavailable.
+  `dataclasses.field(kw_only=True)` is unavailable. The 3.9 floor that
+  motivated this was lifted in 0.3.0, but the argument order is unchanged.
 - `get_chain_head()` returns a `ChainHead` instead of the raw decoded dict.
   Use `head.pin.pin_hash`, `head.pin.pin_height`, `head.height`, `head.synced`.
 - `ChainPin` moved from `warthog_py.transaction_context` to `warthog_py.chain_pin`.
@@ -459,15 +486,14 @@ python examples/transactions.py
 
 ## Dependencies
 
-- `ecdsa` — secp256k1 key handling
+- `coincurve` — libsecp256k1 bindings: key generation, key derivation, RFC6979 deterministic signing with recovery id, and public key recovery
 - `mnemonic` — BIP-39 word list
-- `bip32` — BIP-32 HD derivation
-- `pycoin` — RFC6979 deterministic signing with recovery id (`secp256k1_generator.sign_with_recid`)
+- `bip32` — BIP-32 HD derivation (pulls in `coincurve` itself)
 - `pycryptodome` — RIPEMD-160 (some Python builds lack OpenSSL RIPEMD-160)
 - `requests` — HTTP client
 
 ## Quirks
 
 - Python's standard library `hashlib.new("ripemd160")` requires OpenSSL to be built with RIPEMD-160 enabled (rarely the case on minimal Linux installs). We fallback to `pycryptodome`'s `RIPEMD160.new()` which is pure-Python and always available.
-- Signing uses `pycoin.ecdsa.secp256k1.secp256k1_generator.sign_with_recid` for RFC6979 deterministic nonce and recovery id in one call. The signature is normalized to low-s form (matching BIP-62).
+- Signing uses `coincurve.PrivateKey.sign_recoverable(digest, hasher=None)`, which is RFC 6979 deterministic and returns the 65 bytes `r || s || recid` in one call. libsecp256k1 already normalizes to low-s, so the explicit low-s block in `_sign_hash` is a no-op in practice and is kept only so the guarantee does not depend on the backend's internals. `hasher=None` means the 32-byte digest is signed as is, not hashed again.
 - `Account.sign_bytes` takes arbitrary bytes (`bytes`/`bytearray`/`str`); it hashes the message internally with SHA-256 (the same scheme transaction signing uses). The recovery methods accept the `(r, s, recid, hex)` tuple from `sign_bytes`, a 3-tuple `(r, s, recid)`, or a 130-char hex string.

@@ -31,8 +31,8 @@ dependencies = [
 
 ### Requirements
 
-- Python `>=3.9`
-- Dependencies (`ecdsa`, `mnemonic`, `bip32`, `pycoin`, `pycryptodome`, `requests`) are installed automatically by `uv sync`.
+- Python `>=3.10`
+- Dependencies (`coincurve`, `mnemonic`, `bip32`, `pycryptodome`, `requests`) are installed automatically by `uv sync`.
 
 ## Quick start
 

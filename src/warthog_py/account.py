@@ -8,14 +8,18 @@ Signing follows the BIP-62 / secp256k1 convention: the signature is
 returned in **low-s form** (canonical signature) with the recovery id
 flipped to match if normalization occurs. This is the same convention
 documented in ``docs/developers/integration/wallets.md``.
+
+The curve work is delegated to ``coincurve``, which is libsecp256k1, the
+reference implementation. That gives RFC 6979 deterministic nonces and
+public key recovery from the same audited library.
 """
 
 import hashlib
+import secrets
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
-from ecdsa import SECP256k1, SigningKey
-from pycoin.ecdsa.secp256k1 import secp256k1_generator
+import coincurve
 
 from warthog_py.address import Address
 from warthog_py.errors import (
@@ -28,6 +32,9 @@ SignatureTuple = Tuple[bytes, bytes, int, str]
 
 # Either a SignatureTuple, a (r, s, recid) tuple, or a 130-char hex string
 SignatureInput = Union[SignatureTuple, Tuple[bytes, bytes, int], str]
+
+# secp256k1 group order. A private key must be in [1, n - 1].
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 
 @dataclass(frozen=True)
@@ -56,7 +63,10 @@ class Account:
     @classmethod
     def from_random(cls) -> "Account":
         """Generate a new random account with a fresh private key."""
-        return cls.from_private_key(SigningKey.generate(curve=SECP256k1).to_string())
+        while True:
+            candidate = secrets.token_bytes(32)
+            if 1 <= int.from_bytes(candidate, "big") < SECP256K1_ORDER:
+                return cls.from_private_key(candidate)
 
     @classmethod
     def from_private_key(cls, private_key: bytes) -> "Account":
@@ -74,9 +84,11 @@ class Account:
             )
 
         private_key = bytes(private_key)
-        sk = SigningKey.from_string(private_key, curve=SECP256k1)
-        vk = sk.get_verifying_key()
-        public_compressed = vk.to_string("compressed")
+        try:
+            signing_key = coincurve.PrivateKey(private_key)
+        except ValueError as e:
+            raise InvalidPrivateKeyError(f"invalid private key: {e}") from e
+        public_compressed = signing_key.public_key.format(compressed=True)
         address = _derive_address(public_compressed)
         return cls(
             private_key_hex=private_key.hex(),
@@ -134,18 +146,25 @@ class Account:
                 f"digest must be exactly 32 bytes, got {type(digest).__name__} of length {len(digest) if hasattr(digest, '__len__') else '?'}"
             )
 
-        val = int.from_bytes(digest, "big")
-        order = secp256k1_generator.order()
+        # sign_recoverable is RFC 6979 deterministic and returns the 65 bytes
+        # r || s || recid. hasher=None means the digest is signed as is.
+        recoverable = coincurve.PrivateKey(
+            bytes.fromhex(self.private_key_hex)
+        ).sign_recoverable(bytes(digest), hasher=None)
 
-        r, s, recid = secp256k1_generator.sign_with_recid(self.private_key_int, val)
+        r_bytes = recoverable[:32]
+        s_bytes = recoverable[32:64]
+        recid = recoverable[64]
 
-        # Normalize to low-s form
-        if s > order // 2:
-            s = order - s
+        # libsecp256k1 already normalizes to low-s, so this is a no-op in
+        # practice. It is kept so the guarantee does not depend on the
+        # backend's internals.
+        s_int = int.from_bytes(s_bytes, "big")
+        if s_int > SECP256K1_ORDER // 2:
+            s_int = SECP256K1_ORDER - s_int
+            s_bytes = s_int.to_bytes(32, "big")
             recid ^= 1
 
-        r_bytes = r.to_bytes(32, "big")
-        s_bytes = s.to_bytes(32, "big")
         return (
             r_bytes,
             s_bytes,
@@ -275,32 +294,16 @@ def _recover_pubkey(digest: bytes, r: int, s: int, recid: int) -> Optional[bytes
     """Recover a compressed secp256k1 public key from a signature.
 
     Returns the 33-byte compressed public key, or ``None`` if recovery
-    fails (e.g. recid refers to no valid point on the curve).
+    fails (e.g. the signature does not correspond to a curve point).
     """
-    order = secp256k1_generator.order()
-    is_second_key = recid >> 1
-    y_parity = recid & 1
-
-    x = r + (order if is_second_key else 0)
-
+    recoverable = r.to_bytes(32, "big") + s.to_bytes(32, "big") + bytes([recid])
     try:
-        points = secp256k1_generator.points_for_x(x)
+        public_key = coincurve.PublicKey.from_signature_and_message(
+            recoverable, bytes(digest), hasher=None
+        )
     except ValueError:
         return None
-
-    # points_for_x returns (p_even, p_odd): index by y parity
-    R = points[y_parity]
-
-    inv_r = secp256k1_generator.inverse(r)
-    s_over_r = s * inv_r
-    minus_e_over_r = -(inv_r * int.from_bytes(digest, "big")) * secp256k1_generator
-    try:
-        Q = s_over_r * R + minus_e_over_r
-    except ValueError:
-        return None
-
-    prefix = b"\x02" if Q[1] % 2 == 0 else b"\x03"
-    return prefix + Q[0].to_bytes(32, "big")
+    return public_key.format(compressed=True)
 
 
 def _derive_address(compressed_pubkey: bytes) -> Address:

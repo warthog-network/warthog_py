@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "warthog-py"
-version = "0.2.0"
+version = "0.3.0"
 description = "Python library for the Warthog cryptocurrency"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     {name = "Warthog Network", email = "team@warthog.network"},
 ]
@@ -18,19 +18,18 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "ecdsa>=0.19.0",
+    "coincurve>=20.0.0",
     "mnemonic>=0.20",
     "bip32>=1.0.0",
-    "pycoin>=0.80",
     "pycryptodome>=3.18",
-    "requests>=2.32.0",
+    "requests>=2.33.0",
 ]
 
 [dependency-groups]

@@ -96,7 +96,7 @@ class WarthogDeFiTransactionContext:
         asset_hash: str,
         is_liquidity: bool,
         to_addr: Address,
-        amount_e8: int,
+        amount_u64: int,
     ) -> Dict[str, Any]:
         binary = (
             bytes.fromhex(self.chain_pin.pin_hash)
@@ -105,7 +105,7 @@ class WarthogDeFiTransactionContext:
             + bytes.fromhex(asset_hash)
             + (b"\x01" if is_liquidity else b"\x00")
             + address_bytes(to_addr.hex)
-            + u64be(amount_e8)
+            + u64be(amount_u64)
         )
         return {
             "type": "tokenTransfer",
@@ -115,7 +115,7 @@ class WarthogDeFiTransactionContext:
             "assetHash": asset_hash,
             "isLiquidity": is_liquidity,
             "toAddr": to_addr.hex,
-            "amountU64": amount_e8,
+            "amountU64": amount_u64,
             "signature65": sign(account, binary),
         }
 
@@ -144,7 +144,7 @@ class WarthogDeFiTransactionContext:
         account: Account,
         asset_hash: str,
         is_buy: bool,
-        amount_e8: int,
+        amount_u64: int,
         limit: Price,
     ) -> Dict[str, Any]:
         binary = (
@@ -153,7 +153,7 @@ class WarthogDeFiTransactionContext:
             + u64be(self.fee.e8)
             + bytes.fromhex(asset_hash)
             + (b"\x01" if is_buy else b"\x00")
-            + u64be(amount_e8)
+            + u64be(amount_u64)
             + bytes.fromhex(limit.to_hex())
         )
         return {
@@ -163,7 +163,7 @@ class WarthogDeFiTransactionContext:
             "feeE8": self.fee.e8,
             "assetHash": asset_hash,
             "isBuy": is_buy,
-            "amountU64": amount_e8,
+            "amountU64": amount_u64,
             "limit": limit.to_hex(),
             "signature65": sign(account, binary),
         }

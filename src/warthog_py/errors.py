@@ -39,3 +39,7 @@ class InvalidChainHeadError(WarthogPyError):
 
 class InvalidBalanceError(WarthogPyError):
     """Raised when a node's balance payload is malformed or does not add up."""
+
+
+class InvalidNodeVersionError(WarthogPyError):
+    """Raised when a node's version payload is malformed."""

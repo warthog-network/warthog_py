@@ -344,13 +344,53 @@ family is valid for the other; only the JSON around it differs.
 ### WarthogApiBase
 **File:** `src/warthog_py/warthog_api.py`
 
-The shared HTTP plumbing: the request, the chain head fetch and the
-transaction submission. The node lists are split the same way as the
-clients: `known_nodes_legacy()` and `known_nodes_defi()`.
+The shared HTTP plumbing: the request, the chain head fetch, the node version
+fetch and the transaction submission. The node lists are split the same way as
+the clients: `known_nodes_legacy()` and `known_nodes_defi()`.
 
 `_request` returns the payload untyped, because nothing has checked it yet. A
 caller that needs a typed value parses the result with the `parse` function of
 the relevant class.
+
+### NodeVersion
+**File:** `src/warthog_py/node_version.py`
+
+The version a node reports about itself. `NodeVersion.try_parse()` returns
+`None` on a malformed payload, and `NodeVersion.parse()` raises
+`InvalidNodeVersionError`.
+
+```python
+from warthog_py import NodeVersion
+
+version = NodeVersion.parse({
+    "name": 'v0.10.3 "dd054a2"',
+    "major": 0,
+    "minor": 10,
+    "patch": 3,
+    "commit": "dd054a2",
+})
+
+version.name     # 'v0.10.3 "dd054a2"'
+version.major    # 0
+version.minor    # 10
+version.patch    # 3
+version.commit   # "dd054a2"
+
+# The dotted triple, for comparisons
+version.version  # "0.10.3"
+```
+
+**The path differs per family, the payload does not.** The legacy node
+(core/master, core/dev) serves the version on `/tools/version`; the DeFi node
+(core/defi) serves it on `/version`. Both report the same five fields in the
+same flat shape, so there is one parser and one shared fetch helper
+(`WarthogApiBase._fetch_node_version`), and each client only states its own
+path. This is unlike `/chain/head`, which differs in shape between the two
+generations and so needs an `ApiVersion` argument.
+
+Do not confuse this with `GET /tools/info`, which the SDK does not call. It
+is absent on core/master, private on core/defi, and its shape differs between
+core/dev (flat) and core/defi (nested glaze `NodeInfoResult`).
 
 ### WarthogLegacyApi
 **File:** `src/warthog_py/legacy_api.py`
@@ -380,6 +420,9 @@ head.synced
 
 # The legacy node reports one number: the confirmed balance.
 wart = api.get_wart_balance(address)
+
+# Get the version of the node.
+version = api.get_node_version()
 ```
 
 ### WarthogDeFiApi
@@ -404,6 +447,9 @@ free = balance.free()
 
 # A token balance. The DeFi node only, the legacy node has no tokens.
 token = api.get_token_balance(address, asset_hash)
+
+# Get the version of the node.
+version = api.get_node_version()
 ```
 
 Errors raise `warthog_py.warthog_api.WarthogApiError` (a subclass of
@@ -411,7 +457,8 @@ Errors raise `warthog_py.warthog_api.WarthogApiError` (a subclass of
 does not match the client's generation raises
 `warthog_py.errors.InvalidChainHeadError`, a balance payload that is
 malformed or does not add up raises
-`warthog_py.errors.InvalidBalanceError`.
+`warthog_py.errors.InvalidBalanceError`, and a malformed version payload
+raises `warthog_py.errors.InvalidNodeVersionError`.
 
 ### API generations: V1 vs V2
 

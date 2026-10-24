@@ -88,6 +88,7 @@ print(result["txHash"])
 | `warthog_py.HDWallet` | BIP-44 hierarchical deterministic wallet |
 | `warthog_py.ChainPin` | Proposed (height, hash) pin for transaction building |
 | `warthog_py.ChainHead` | Normalized `/chain/head` view |
+| `warthog_py.NodeVersion` | The version a node reports about itself |
 | `warthog_py.DeFiWartBalance` | WART balance on the DeFi node |
 | `warthog_py.TokenBalance` | Token balance on the DeFi node |
 | `warthog_py.AnyTransactionContext` | Union of the two transaction contexts |
@@ -148,6 +149,25 @@ free = balance.free()
 
 # A token balance, the DeFi node only.
 token = defi.get_token_balance(address, asset_hash)
+```
+
+### Node version
+
+Ask a node which version it is running. Both families report the same
+fields, on different paths.
+
+```python
+version = legacy.get_node_version()  # /tools/version
+version = defi.get_node_version()      # /version
+
+version.name     # 'v0.10.3 "dd054a2"', the version string with the commit
+version.major    # 0
+version.minor    # 10
+version.patch    # 3
+version.commit   # "dd054a2"
+
+# The dotted triple, for comparisons
+version.version  # "0.10.3"
 ```
 
 ## Error handling convention

@@ -26,6 +26,7 @@ from warthog_py.hd_wallet import HDWallet
 from warthog_py.chain_pin import PIN_HEIGHT_MULTIPLE, ChainPin
 from warthog_py.chain_head import ChainHead
 from warthog_py.balance import DeFiWartBalance, TokenBalance
+from warthog_py.node_version import NodeVersion
 from warthog_py.transaction_context import AnyTransactionContext, TransactionJson
 from warthog_py.legacy_transaction_context import WarthogLegacyTransactionContext
 from warthog_py.defi_transaction_context import WarthogDeFiTransactionContext
@@ -60,6 +61,7 @@ __all__ = [
     "ChainHead",
     "DeFiWartBalance",
     "TokenBalance",
+    "NodeVersion",
     "AnyTransactionContext",
     "TransactionJson",
     "WarthogLegacyTransactionContext",

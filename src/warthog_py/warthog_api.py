@@ -15,6 +15,7 @@ import requests
 from warthog_py.chain_head import ChainHead
 from warthog_py.constants import ApiVersion
 from warthog_py.errors import WarthogPyError
+from warthog_py.node_version import NodeVersion
 from warthog_py.nonce_id import NonceId
 from warthog_py.rounded_fee import RoundedFee
 
@@ -96,6 +97,21 @@ class WarthogApiBase:
             raise WarthogApiError({"code": -1, "error": "Invalid transaction add response"})
 
         return data
+
+    def _fetch_node_version(self, path: str) -> NodeVersion:
+        """Fetch the node's version from whichever endpoint serves it.
+
+        Every node family reports the same five fields in the same flat shape,
+        so the parsing is shared. Only the path differs, and that is what the
+        caller passes in.
+
+        Raises ``WarthogApiError`` or ``InvalidNodeVersionError`` on failure.
+        """
+        result = self._request("GET", path)
+        if not result.get("success"):
+            raise WarthogApiError(result)
+
+        return NodeVersion.parse(result["data"])
 
     def _request(
         self,

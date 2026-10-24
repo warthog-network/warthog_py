@@ -14,6 +14,7 @@ from warthog_py.balance import DeFiWartBalance, TokenBalance
 from warthog_py.constants import ApiVersion
 from warthog_py.defi_transaction_context import WarthogDeFiTransactionContext
 from warthog_py.nonce_id import NonceId
+from warthog_py.node_version import NodeVersion
 from warthog_py.rounded_fee import RoundedFee
 from warthog_py.warthog_api import KNOWN_NODES_DEFI, WarthogApiBase, WarthogApiError
 
@@ -68,3 +69,13 @@ class WarthogDeFiApi(WarthogApiBase):
             raise WarthogApiError(result)
 
         return TokenBalance.parse(result["data"])
+
+    def get_node_version(self) -> NodeVersion:
+        """Get the version of the node.
+
+        The DeFi node serves it on ``/version``, not on ``/tools/version`` like
+        the legacy node does. The payload is the same either way.
+
+        Raises ``WarthogApiError`` or ``InvalidNodeVersionError`` on failure.
+        """
+        return self._fetch_node_version("/version")

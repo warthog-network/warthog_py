@@ -5,10 +5,11 @@ import pytest
 from warthog_py.chain_head import ChainHead
 from warthog_py.chain_pin import ChainPin
 from warthog_py.defi_api import WarthogDeFiApi
-from warthog_py.errors import InvalidChainHeadError
+from warthog_py.errors import InvalidChainHeadError, InvalidNodeVersionError
 from warthog_py.legacy_api import WarthogLegacyApi
 from warthog_py.legacy_transaction_context import WarthogLegacyTransactionContext
 from warthog_py.defi_transaction_context import WarthogDeFiTransactionContext
+from warthog_py.node_version import NodeVersion
 from warthog_py.nonce_id import NonceId
 from warthog_py.rounded_fee import RoundedFee
 from warthog_py.warthog_api import (
@@ -41,6 +42,19 @@ V2_HEAD = {
             "pinHeight": 320,
         },
         "synced": True,
+    },
+}
+
+# The version payload. Every node family reports these five fields in this
+# flat shape, so one fixture covers all of them.
+VERSION_RESPONSE = {
+    "code": 0,
+    "data": {
+        "name": 'v0.10.3 "dd054a2"',
+        "major": 0,
+        "minor": 10,
+        "patch": 3,
+        "commit": "dd054a2",
     },
 }
 
@@ -194,6 +208,51 @@ class TestDeFiApi:
             assert balance.name == "TOK2"
             assert balance.total.amount == 10_000_000
             assert balance.free().amount == 9_000_000
+
+
+class TestNodeVersion:
+    def test_the_legacy_client_reads_the_version_from_tools_version(self):
+        with patch(
+            "warthog_py.warthog_api.requests.get",
+            return_value=_mock_response(VERSION_RESPONSE),
+        ) as mock_get:
+            version = WarthogLegacyApi("http://node.test").get_node_version()
+
+        assert mock_get.call_args[0][0] == "http://node.test/tools/version"
+        assert isinstance(version, NodeVersion)
+        assert version.version == "0.10.3"
+        assert version.commit == "dd054a2"
+
+    def test_the_defi_client_reads_the_version_from_version(self):
+        with patch(
+            "warthog_py.warthog_api.requests.get",
+            return_value=_mock_response(VERSION_RESPONSE),
+        ) as mock_get:
+            version = WarthogDeFiApi("http://node.test").get_node_version()
+
+        assert mock_get.call_args[0][0] == "http://node.test/version"
+        assert isinstance(version, NodeVersion)
+        assert version.version == "0.10.3"
+        assert version.commit == "dd054a2"
+
+    def test_both_clients_read_the_same_payload_identically(self):
+        # The path differs, the payload does not.
+        with patch(
+            "warthog_py.warthog_api.requests.get",
+            return_value=_mock_response(VERSION_RESPONSE),
+        ):
+            legacy = WarthogLegacyApi("http://node.test").get_node_version()
+            defi = WarthogDeFiApi("http://node.test").get_node_version()
+
+        assert legacy == defi
+
+    def test_a_malformed_version_payload_raises(self):
+        with patch(
+            "warthog_py.warthog_api.requests.get",
+            return_value=_mock_response({"code": 0, "data": {"name": "v0.10.3"}}),
+        ):
+            with pytest.raises(InvalidNodeVersionError):
+                WarthogDeFiApi("http://node.test").get_node_version()
 
 
 class TestSharedClientBehaviour:

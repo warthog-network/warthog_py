@@ -14,6 +14,7 @@ from warthog_py.chain_head import ChainHead
 from warthog_py.constants import ApiVersion
 from warthog_py.legacy_transaction_context import WarthogLegacyTransactionContext
 from warthog_py.nonce_id import NonceId
+from warthog_py.node_version import NodeVersion
 from warthog_py.rounded_fee import RoundedFee
 from warthog_py.wart import Wart
 from warthog_py.warthog_api import KNOWN_NODES_LEGACY, WarthogApiBase, WarthogApiError
@@ -58,3 +59,12 @@ class WarthogLegacyApi(WarthogApiBase):
             raise WarthogApiError({"code": -1, "error": "Invalid balance response"})
 
         return Wart.parse(balance)
+
+    def get_node_version(self) -> NodeVersion:
+        """Get the version of the node.
+
+        The legacy node serves it on ``/tools/version``.
+
+        Raises ``WarthogApiError`` or ``InvalidNodeVersionError`` on failure.
+        """
+        return self._fetch_node_version("/tools/version")

@@ -348,6 +348,10 @@ The shared HTTP plumbing: the request, the chain head fetch and the
 transaction submission. The node lists are split the same way as the
 clients: `known_nodes_legacy()` and `known_nodes_defi()`.
 
+`_request` returns the payload untyped, because nothing has checked it yet. A
+caller that needs a typed value parses the result with the `parse` function of
+the relevant class.
+
 ### WarthogLegacyApi
 **File:** `src/warthog_py/legacy_api.py`
 
@@ -405,7 +409,7 @@ token = api.get_token_balance(address, asset_hash)
 Errors raise `warthog_py.warthog_api.WarthogApiError` (a subclass of
 `WarthogPyError`) with `.code` and a human-readable message. A chain head that
 does not match the client's generation raises
-`warthog_py.errors.InvalidChainHeadError`, and a balance payload that is
+`warthog_py.errors.InvalidChainHeadError`, a balance payload that is
 malformed or does not add up raises
 `warthog_py.errors.InvalidBalanceError`.
 

@@ -81,12 +81,21 @@ class WarthogApiBase:
 
         Returns the parsed ``data`` payload (e.g. ``{"txHash": "..."}``).
 
+        The hash is checked rather than assumed, so a response that does not
+        carry one is reported as an error instead of being passed off as a
+        success.
+
         Raises ``WarthogApiError`` on failure.
         """
         result = self._request("POST", "/transaction/add", body=tx)
         if not result.get("success"):
             raise WarthogApiError(result)
-        return result["data"]
+
+        data = result["data"]
+        if not isinstance(data, dict) or not isinstance(data.get("txHash"), str):
+            raise WarthogApiError({"code": -1, "error": "Invalid transaction add response"})
+
+        return data
 
     def _request(
         self,

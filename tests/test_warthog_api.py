@@ -207,6 +207,28 @@ class TestSharedClientBehaviour:
             result = api.submit_transaction({"signature65": "ab" * 65})
             assert result["txHash"] == "deadbeef"
 
+    def test_submit_transaction_rejects_a_response_without_a_hash(self):
+        api_response = {"code": 0, "data": {"notATxHash": "deadbeef"}}
+        with patch(
+            "warthog_py.warthog_api.requests.post",
+            return_value=_mock_response(api_response),
+        ):
+            api = WarthogLegacyApi("http://65.87.7.86:3001")
+            with pytest.raises(WarthogApiError) as exc_info:
+                api.submit_transaction({"signature65": "ab" * 65})
+            assert "Invalid transaction add" in str(exc_info.value)
+
+    def test_submit_transaction_rejects_a_response_that_is_not_a_dict(self):
+        api_response = {"code": 0, "data": "deadbeef"}
+        with patch(
+            "warthog_py.warthog_api.requests.post",
+            return_value=_mock_response(api_response),
+        ):
+            api = WarthogLegacyApi("http://65.87.7.86:3001")
+            with pytest.raises(WarthogApiError) as exc_info:
+                api.submit_transaction({"signature65": "ab" * 65})
+            assert "Invalid transaction add" in str(exc_info.value)
+
     def test_error_response(self):
         err = {"code": 42, "error": "boom"}
         with patch(
